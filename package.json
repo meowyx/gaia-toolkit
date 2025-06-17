@@ -6,6 +6,11 @@
     "bin": {
       "gaia": "./dist/gaia-manager.js"
     },
+    "files": [
+      "dist/",
+      "README.md",
+      "LICENSE"
+    ],
     "scripts": {
       "build": "tsc",
       "dev": "ts-node scripts/gaia-manager.ts",
