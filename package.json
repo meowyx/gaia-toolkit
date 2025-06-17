@@ -1,32 +1,31 @@
 {
     "name": "gaia-toolkit",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "A TypeScript-based CLI tool to manage GaiaNet nodes",
     "main": "dist/gaia-manager.js",
     "bin": {
-      "gaia": "./dist/gaia-manager.js"
+        "gaia": "./dist/gaia-manager.js"
     },
     "files": [
-      "dist/",
-      "README.md",
-      "LICENSE"
+        "dist/",
+        "README.md",
+        "LICENSE"
     ],
     "scripts": {
-      "build": "tsc",
-      "dev": "ts-node scripts/gaia-manager.ts",
-      "start": "node dist/gaia-manager.js",
-      "prepublishOnly": "npm run build"
+        "build": "tsc",
+        "dev": "ts-node scripts/gaia-manager.ts",
+        "start": "node dist/gaia-manager.js",
+        "prepublishOnly": "npm run build"
     },
     "dependencies": {
-      "commander": "^14.0.0",
-      "inquirer": "^8.2.4"
+        "commander": "^14.0.0",
+        "inquirer": "^8.2.4"
     },
     "devDependencies": {
-      "@types/node": "^20.12.12",
-      "ts-node": "^10.9.2",
-      "typescript": "^5.4.5",
-      "@types/inquirer": "^8.2.1"
+        "@types/node": "^20.12.12",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.5",
+        "@types/inquirer": "^8.2.1"
     },
     "type": "commonjs"
-  }
-  
+}
