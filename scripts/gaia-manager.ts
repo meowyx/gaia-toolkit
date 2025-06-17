@@ -1,141 +1,293 @@
 #!/usr/bin/env node
 
-import { Command, Argument } from "commander"
+import { Command } from "commander"
 import { spawn, type SpawnOptions } from "child_process"
+import inquirer from "inquirer"
+import os from "os"
 
-// Define a type for our model objects for type safety
 interface Model {
-  name: string
-  id: string
-  configUrl: string
+name: string
+id: string
+configUrl: string
+sizeCategory?: ModelSizeCategory
 }
 
-const models: Model[] = [
-  {
-    name: "Phi-3-mini-4k",
-    id: "phi-3-mini-4k",
-    configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/phi-3-mini-instruct-4k/config.json",
-  },
-  {
-    name: "Llama-3-Groq-8B",
-    id: "llama-3-groq-8b",
-    configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/llama-3-groq-8b-tool/config.json",
-  },
-  {
-    name: "Llama-3-8B",
-    id: "llama-3-8b",
-    configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/llama-3-8b-instruct/config.json",
-  },
-  {
-    name: "Llama-2-7B",
-    id: "llama-2-7b",
-    configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/llama-2-7b/config.json",
-  },
-  {
-    name: "Gemma-3-1B",
-    id: "gemma-3-1b",
-    configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/gemma-3-1b-it/config.json",
-  },
-  {
-    name: "Gemma-1.1-7B",
-    id: "gemma-1.1-7b",
-    configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/gemma-1.1-7b-it/config.json",
-  },
-  {
-    name: "EXAONE-3.5-2.4b",
-    id: "exaone-3.5-2.4b",
-    configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/exaone-3.5-2.4b-instruct/config.json",
-  },
-  {
-    name: "Deepseek-R1-Distilled",
-    id: "deepseek-r1-distill-llama-8b",
-    configUrl:
-      "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/deepseek-r1-distill-llama-8b/config.json",
-  },
-]
+enum ModelSizeCategory {
+SMALL = "Small (1B - 5B parameters)",
+MEDIUM = "Medium (6B - 8B parameters)",
+BIG = "Big (9B+ parameters)", 
+UNKNOWN = "Unknown Size",
+}
 
-function runCommand(command: string, args: string[] = [], options: SpawnOptions = {}): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const commandString = args.length > 0 ? `${command} ${args.join(" ")}` : command
-    console.log(`\n⏳ Executing: ${commandString}`)
+function getSystemRamGB(): number {
+const totalMemoryBytes = os.totalmem()
+const totalMemoryGB = totalMemoryBytes / 1024 ** 3
+return Math.round(totalMemoryGB * 10) / 10
+}
 
-    const isShellCommand = command.includes("|") || command.includes(">")
+function categorizeModel(modelId: string): ModelSizeCategory {
+const idLower = modelId.toLowerCase()
+const match = idLower.match(/(\d+(\.\d+)?)[bB]/)
 
-    const proc = spawn(isShellCommand ? command : command, isShellCommand ? [] : args, {
-      stdio: "inherit",
-      shell: isShellCommand ? true : options.shell || false,
-      ...options,
-    })
+if (match && match[1]) {
+  const params = Number.parseFloat(match[1])
+  if (params >= 1 && params <= 5) return ModelSizeCategory.SMALL
+  if (params >= 6 && params <= 8) return ModelSizeCategory.MEDIUM
+  if (params > 8) return ModelSizeCategory.BIG // Models >8B are considered BIG
+}
 
-    proc.on("close", (code) => {
-      if (code === 0) {
-        console.log(`✅ Command finished successfully: ${commandString}`)
-        resolve()
-      } else {
-        const errorMsg = `Command failed with code ${code}: ${commandString}`
-        console.error(`❌ ${errorMsg}`)
-        reject(new Error(errorMsg))
+// Fallback checks based on common naming patterns
+if (idLower.includes("7b") || idLower.includes("8b")) return ModelSizeCategory.MEDIUM
+if (
+  idLower.includes("1b") ||
+  idLower.includes("2b") ||
+  idLower.includes("3b") ||
+  idLower.includes("mini") ||
+  idLower.includes("small")
+)
+  return ModelSizeCategory.SMALL
+if (
+  idLower.includes("13b") ||
+  idLower.includes("22b") || // e.g. codestral-0.1-22b
+  idLower.includes("30b") ||
+  idLower.includes("70b") ||
+  idLower.includes("large") ||
+  idLower.includes("qwen") ||
+  idLower.includes("big")
+)
+  return ModelSizeCategory.BIG
+
+if (idLower.includes("phi-3-mini")) return ModelSizeCategory.SMALL
+if (idLower.includes("exaone-3.5-2.4b")) return ModelSizeCategory.SMALL
+if (idLower.includes("codestral-0.1-22b")) return ModelSizeCategory.BIG
+
+return ModelSizeCategory.UNKNOWN
+}
+
+async function fetchModelsFromGitHub(): Promise<Model[]> {
+console.log("⏳ Fetching latest models from GitHub...")
+const apiUrl = "https://api.github.com/repos/GaiaNet-AI/node-configs/contents/"
+try {
+  const response = await fetch(apiUrl, {
+    headers: {
+      'User-Agent': 'GaiaNet-CLI-Model-Fetcher/0.1.0' // Or any appropriate name for your app
+    }
+  })
+  if (!response.ok) {
+    throw new Error(`GitHub API responded with status ${response.status}`)
+  }
+  const contents: any[] = await response.json()
+
+  const fetchedModels = contents
+    .filter((item) => item.type === "dir" && !item.name.startsWith("."))
+    .map((item) => {
+      const modelId = item.name
+      const readableName = modelId
+        .replace(/-/g, " ")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (l: string) => l.toUpperCase())
+
+      const category = categorizeModel(modelId)
+
+      return {
+        id: modelId,
+        name: `${readableName}`,
+        configUrl: `https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/${modelId}/config.json`,
+        sizeCategory: category,
       }
     })
 
-    proc.on("error", (err) => {
-      const errorMsg = `Failed to start command: ${commandString}`
-      console.error(`❌ ${errorMsg}`)
-      reject(new Error(`${errorMsg}\n${err.message}`))
-    })
+  if (fetchedModels.length === 0) {
+    throw new Error("No models found in the GitHub repository.")
+  }
+
+  console.log("✅ Successfully fetched model list.")
+  return fetchedModels
+} catch (error) {
+  console.error("\n❌ Error fetching models from GitHub.")
+  if (error instanceof Error) console.error(`Details: ${error.message}`)
+  console.error("Falling back to a minimal hardcoded list...")
+  return [
+    {
+      name: "Phi-3 Mini 4k (Fallback)",
+      id: "phi-3-mini-instruct-4k",
+      configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/phi-3-mini-instruct-4k/config.json",
+      sizeCategory: ModelSizeCategory.SMALL,
+    },
+    {
+      name: "Llama 3 8B (Fallback)",
+      id: "llama-3-8b-instruct",
+      configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/llama-3-8b-instruct/config.json",
+      sizeCategory: ModelSizeCategory.MEDIUM,
+    },
+    {
+      name: "Codestral 0.1 22B (Fallback)",
+      id: "codestral-0.1-22b",
+      configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/codestral-0.1-22b/config.json",
+      sizeCategory: ModelSizeCategory.BIG,
+    },
+  ]
+}
+}
+
+function runCommand(command: string, args: string[] = [], options: SpawnOptions = {}): Promise<void> {
+return new Promise((resolve, reject) => {
+  const commandString = args.length > 0 ? `${command} ${args.join(" ")}` : command
+  console.log(`\n⏳ Executing: ${commandString}`)
+  const isShellCommand = command.includes("|") || command.includes(">")
+  const proc = spawn(isShellCommand ? command : command, isShellCommand ? [] : args, {
+    stdio: "inherit",
+    shell: isShellCommand ? true : options.shell || false,
+    ...options,
   })
+  proc.on("close", (code) => {
+    if (code === 0) {
+      console.log(`✅ Command finished successfully: ${commandString}`)
+      resolve()
+    } else {
+      const errorMsg = `Command failed with code ${code}: ${commandString}`
+      console.error(`❌ ${errorMsg}`)
+      reject(new Error(errorMsg))
+    }
+  })
+  proc.on("error", (err) => {
+    const errorMsg = `Failed to start command: ${commandString}`
+    console.error(`❌ ${errorMsg}`)
+    reject(new Error(`${errorMsg}\n${err.message}`))
+  })
+})
 }
 
 const program = new Command()
 
 program
-  .name("gaia") // Program name for help messages
-  .description("CLI to install, initialize, and start GaiaNet nodes for various AI models.")
-  .version("0.1.0")
+.name("gaia")
+.description("CLI to install, initialize, and start GaiaNet nodes for various AI models.")
+.version("0.1.0")
+
+async function setup() {
+  try {
+    const totalRamGB = getSystemRamGB()
+    console.log(`\nℹ️  Your system has approximately ${totalRamGB} GB of RAM.`)
+    console.log("    Please consider this when selecting a model size.")
+
+    if (totalRamGB < 4) {
+      console.log("    ⚠️  Your system has very low RAM. Running even small models might be challenging.")
+    } else if (totalRamGB < 8) {
+      console.log("    Models in the 'Small' category are generally recommended for your system.")
+    } else if (totalRamGB < 24) {
+      console.log("    Models in 'Small' or 'Medium' categories are generally recommended.")
+      console.log(
+        "    Running 'Big' models may lead to performance issues or errors on systems with less than 24GB RAM.",
+      )
+    } else {
+      console.log("    Your system appears to have sufficient RAM for all model categories, including 'Big' models.")
+    }
+
+    const allModels = await fetchModelsFromGitHub()
+    if (allModels.length === 0) {
+      console.log("No models available to set up.")
+      return
+    }
+
+    const categoryAnswers = await inquirer.prompt([
+      {
+        type: "list",
+        name: "selectedCategory",
+        message: "What kind of model do you want to run?",
+        choices: [
+          ModelSizeCategory.SMALL,
+          ModelSizeCategory.MEDIUM,
+          ModelSizeCategory.BIG,
+          ModelSizeCategory.UNKNOWN,
+        ],
+        default: ModelSizeCategory.SMALL,
+      },
+    ])
+
+    const selectedCategoryValue = categoryAnswers.selectedCategory as ModelSizeCategory
+    const filteredModels = allModels.filter((model) => model.sizeCategory === selectedCategoryValue)
+
+    if (filteredModels.length === 0) {
+      console.log(`\nℹ️ No models found in the "${selectedCategoryValue.split(" ")[0]}" category.`)
+      const { tryAgain } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "tryAgain",
+          message: "Would you like to select a different category?",
+          default: true,
+        },
+      ])
+      if (tryAgain) {
+        return setup()
+      }
+      return
+    }
+
+    const modelAnswers = await inquirer.prompt([
+      {
+        type: "list",
+        name: "selectedModelId",
+        message: `Select a model from the "${selectedCategoryValue.split(" ")[0]}" category:`,
+        choices: filteredModels.map((model) => ({ name: model.name, value: model.id })),
+        pageSize: 10,
+      },
+    ])
+
+    const selectedModelId = modelAnswers.selectedModelId
+    const selectedModel = allModels.find((m) => m.id === selectedModelId)
+
+    if (!selectedModel) {
+      console.error(`Error: Could not find details for selected model ID "${selectedModelId}".`)
+      process.exit(1)
+    }
+
+    if (selectedModel.sizeCategory === ModelSizeCategory.BIG && totalRamGB < 24) {
+      console.warn(
+        `\n⚠️  Warning: You've selected a 'Big' model (${selectedModel.name}), but your system has ${totalRamGB} GB of RAM. ` +
+          "Optimal performance for 'Big' models is generally expected with 24GB RAM or more. " +
+          "You might experience performance issues or out-of-memory errors.",
+      )
+    } else if (selectedModel.sizeCategory === ModelSizeCategory.MEDIUM && totalRamGB < 8) {
+      console.warn(
+        `\n⚠️  Warning: You've selected a 'Medium' model (${selectedModel.name}), but your system has ${totalRamGB} GB of RAM. Performance might be suboptimal.`,
+      )
+    }
+
+    console.log(
+      `\n🚀 Starting setup for GaiaNet node with model: ${selectedModel.name} (${selectedModel.sizeCategory?.split(" ")[0]})`,
+    )
+
+    console.log("\nStep 1: Installing GaiaNet node...")
+    const installCommandString =
+      "curl -sSfL 'https://github.com/GaiaNet-AI/gaianet-node/releases/latest/download/install.sh' | bash"
+    await runCommand(installCommandString, [], { shell: true })
+
+    console.log(`\nStep 2: Initializing with ${selectedModel.name} model...`)
+    await runCommand("gaianet", ["init", "--config", selectedModel.configUrl])
+    console.log(`${selectedModel.name} model initialized successfully.`)
+
+    console.log("\nStep 3: Starting the node...")
+    await runCommand("gaianet", ["start"])
+    console.log("GaiaNet node started successfully.")
+
+    console.log(`\n🎉 Setup complete for ${selectedModel.name}!`)
+    console.log("Your GaiaNet node should now be running.")
+  } catch (error) {
+    console.error(`\n🛑 An unexpected error occurred during setup:`)
+    if (error instanceof Error) {
+      if ((error as any).isTtyError) console.error("Prompt couldn't be rendered. Ensure you're running in a TTY.")
+      else console.error(error.message)
+    } else {
+      console.error(String(error))
+    }
+    process.exit(1)
+  }
+}
 
 program
-  .command("setup")
-  .description("Install GaiaNet, then initialize and start a node for a specific model.")
-  .addArgument(new Argument("<model-id>", "ID of the model to set up.").choices(models.map((m) => m.id)))
-  .action(async (modelId: string) => {
-    const selectedModel = models.find((m) => m.id === modelId)
-    if (!selectedModel) {
-      // This should ideally be caught by commander's choices validation,
-      // but it's good to have a fallback.
-      console.error(`Error: Model ID "${modelId}" not found.`)
-      process.exit(1)
-    }
-
-    console.log(`🚀 Starting setup for GaiaNet node with model: ${selectedModel.name}`)
-
-    try {
-      console.log("\nStep 1: Installing GaiaNet node...")
-      const installCommandString =
-        "curl -sSfL 'https://github.com/GaiaNet-AI/gaianet-node/releases/latest/download/install.sh' | bash"
-      await runCommand(installCommandString, [], { shell: true })
-
-      console.log(`\nStep 2: Initializing with ${selectedModel.name} model...`)
-      await runCommand("gaianet", ["init", "--config", selectedModel.configUrl])
-      console.log(`${selectedModel.name} model initialized successfully.`)
-
-      console.log("\nStep 3: Starting the node...")
-      await runCommand("gaianet", ["start"])
-      console.log("GaiaNet node started successfully.")
-
-      console.log(`\n🎉 Setup complete for ${selectedModel.name}!`)
-      console.log("Your GaiaNet node should now be running.")
-    } catch (error) {
-      console.error(`\n🛑 Error during setup for ${selectedModel.name}:`)
-      if (error instanceof Error) {
-        console.error(error.message)
-      } else {
-        console.error(String(error)) // Ensure error is stringified if not an Error instance
-      }
-      console.error(
-        "\nPlease check the output above for details. Ensure `gaianet` is accessible after installation if errors persist in later steps.",
-      )
-      process.exit(1)
-    }
-  })
+.command("setup")
+.description("Interactively select a model category and then a model to install.")
+.action(setup)
 
 program.parse(process.argv)
