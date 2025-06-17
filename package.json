@@ -1,5 +1,5 @@
 {
-    "name": "gaia-cli",
+    "name": "gaia-toolkit",
     "version": "0.1.0",
     "description": "A TypeScript-based CLI tool to manage GaiaNet nodes",
     "main": "dist/gaia-manager.js",
