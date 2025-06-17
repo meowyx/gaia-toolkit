@@ -5,7 +5,7 @@ A command-line interface (CLI) tool for managing and running various AI models t
 ## Features
 
 ### Model Management
-- **Dynamic Model Discovery**: Automatically fetches available models from the GaiaNet repository
+- **Dynamic Model Discovery**: Automatically fetches available models from the gaia repository
 - **Smart Model Categorization**: Models are intelligently categorized based on their size:
   - Small (1B - 5B parameters)
   - Medium (6B - 8B parameters)
@@ -39,7 +39,7 @@ The setup process will:
 1. Check your system's RAM
 2. Show available model categories
 3. Let you select a specific model
-4. Install and configure the GaiaNet node
+4. Install and configure the gaia node
 5. Start the node with your selected model
 
 ### Safety Features
