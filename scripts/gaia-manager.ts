@@ -10,6 +10,7 @@ name: string
 id: string
 configUrl: string
 sizeCategory?: ModelSizeCategory
+useCase?: string[]
 }
 
 enum ModelSizeCategory {
@@ -64,6 +65,94 @@ if (idLower.includes("codestral-0.1-22b")) return ModelSizeCategory.BIG
 return ModelSizeCategory.UNKNOWN
 }
 
+function getModelUseCases(modelId: string): string[] {
+const idLower = modelId.toLowerCase()
+
+// Code-focused models
+if (idLower.includes("codestral") || idLower.includes("code")) {
+  return ["coding", "code-generation", "programming-assistance", "debugging"]
+}
+
+// Instruction-following models
+if (idLower.includes("instruct")) {
+  return ["general-chat", "question-answering", "instruction-following", "creative-writing"]
+}
+
+// Chat models
+if (idLower.includes("chat")) {
+  return ["general-chat", "conversation", "customer-support", "personal-assistant"]
+}
+
+// Mini/Small models - good for lightweight tasks
+if (idLower.includes("mini") || idLower.includes("phi-3")) {
+  return ["lightweight-tasks", "quick-responses", "resource-constrained", "mobile-deployment"]
+}
+
+// Math/reasoning models
+if (idLower.includes("math") || idLower.includes("reasoning")) {
+  return ["mathematical-reasoning", "problem-solving", "analytical-tasks"]
+}
+
+// Llama models - versatile general purpose
+if (idLower.includes("llama")) {
+  return ["general-purpose", "versatile-tasks", "balanced-performance", "research"]
+}
+
+// Default use cases for unknown models
+return ["general-purpose"]
+}
+
+function getRecommendationsByUseCase(useCase: string, totalRamGB: number): string {
+const recommendations: Record<string, string> = {
+  "coding": `
+    🔧 CODING & PROGRAMMING:
+    • Small models (1-5B): Good for basic code completion, syntax help
+    • Medium models (6-8B): Better code understanding, debugging assistance
+    • Big models (9B+): Advanced code generation, complex problem solving
+    
+    Recommended: Codestral 22B (if RAM > 24GB) or Llama 3 8B`,
+    
+  "general-chat": `
+    💬 GENERAL CHAT & CONVERSATION:
+    • Small models (1-5B): Quick responses, basic conversations
+    • Medium models (6-8B): More natural conversations, better context
+    • Big models (9B+): Human-like interactions, complex discussions
+    
+    Recommended: Llama 3 8B or Phi-3 Mini (for faster responses)`,
+    
+  "creative-writing": `
+    ✍️ CREATIVE WRITING:
+    • Small models (1-5B): Simple creative tasks, short stories
+    • Medium models (6-8B): Better storytelling, character development
+    • Big models (9B+): Complex narratives, nuanced writing styles
+    
+    Recommended: Medium or Big instruct models for best creativity`,
+    
+  "resource-constrained": `
+    ⚡ RESOURCE-CONSTRAINED ENVIRONMENTS:
+    • Focus on Small models (1-5B parameters)
+    • Phi-3 Mini: Excellent performance-to-size ratio
+    • ExaOne 2.4B: Good for multilingual tasks
+    
+    Your system (${totalRamGB}GB RAM): ${totalRamGB < 8 ? 'Stick to Small models' : 'Can handle Small/Medium models'}`,
+    
+  "research": `
+    🔬 RESEARCH & ANALYSIS:
+    • Medium models (6-8B): Good for literature review, summarization
+    • Big models (9B+): Complex analysis, research assistance
+    
+    Recommended: Llama 3 8B or larger models for comprehensive research tasks`
+}
+
+return recommendations[useCase] || `
+    📝 GENERAL PURPOSE:
+    • Small (1-5B): Fast responses, basic tasks, mobile/edge deployment
+    • Medium (6-8B): Balanced performance, most common use cases
+    • Big (9B+): Advanced capabilities, complex reasoning, research
+    
+    Your system (${totalRamGB}GB RAM): ${totalRamGB < 8 ? 'Small models recommended' : totalRamGB < 24 ? 'Small/Medium models recommended' : 'All model sizes supported'}`
+}
+
 async function fetchModelsFromGitHub(): Promise<Model[]> {
 console.log("⏳ Fetching latest models from GitHub...")
 const apiUrl = "https://api.github.com/repos/GaiaNet-AI/node-configs/contents/"
@@ -94,6 +183,7 @@ try {
         name: `${readableName}`,
         configUrl: `https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/${modelId}/config.json`,
         sizeCategory: category,
+        useCase: getModelUseCases(modelId),
       }
     })
 
@@ -113,18 +203,21 @@ try {
       id: "phi-3-mini-instruct-4k",
       configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/phi-3-mini-instruct-4k/config.json",
       sizeCategory: ModelSizeCategory.SMALL,
+      useCase: getModelUseCases("phi-3-mini-instruct-4k"),
     },
     {
       name: "Llama 3 8B (Fallback)",
       id: "llama-3-8b-instruct",
       configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/llama-3-8b-instruct/config.json",
       sizeCategory: ModelSizeCategory.MEDIUM,
+      useCase: getModelUseCases("llama-3-8b-instruct"),
     },
     {
       name: "Codestral 0.1 22B (Fallback)",
       id: "codestral-0.1-22b",
       configUrl: "https://raw.githubusercontent.com/GaiaNet-AI/node-configs/main/codestral-0.1-22b/config.json",
       sizeCategory: ModelSizeCategory.BIG,
+      useCase: getModelUseCases("codestral-0.1-22b"),
     },
   ]
 }
@@ -164,6 +257,130 @@ program
 .name("gaia")
 .description("CLI to install, initialize, and start GaiaNet nodes for various AI models.")
 .version("0.1.0")
+
+function showWelcomeBanner() {
+  console.log(`
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║   ██████╗  █████╗ ██╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗   ║
+║  ██╔════╝ ██╔══██╗██║██╔══██╗    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██║ ██╔╝██║╚══██╔══╝   ║
+║  ██║  ███╗███████║██║███████║       ██║   ██║   ██║██║   ██║██║     █████╔╝ ██║   ██║      ║
+║  ██║   ██║██╔══██║██║██╔══██║       ██║   ██║   ██║██║   ██║██║     ██╔═██╗ ██║   ██║      ║
+║  ╚██████╔╝██║  ██║██║██║  ██║       ██║   ╚██████╔╝╚██████╔╝███████╗██║  ██╗██║   ██║      ║
+║   ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝   ╚═╝      ║
+║                                                                                            ║
+║                            🤖 Your Own AI, Your Own Data                                   ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+
+🚀 AVAILABLE COMMANDS:
+──────────────────────────────────────────────────────────────────────────────
+  gaia setup      📦 Interactive model selection and installation
+  gaia help       📚 Show comprehensive model selection guide  
+  gaia recommend  🎯 Get personalized model recommendations
+
+💡 QUICK START:
+  Run 'gaia setup' to get started with your first AI model!
+
+🔧 Need help choosing a model? Run 'gaia recommend' for personalized suggestions.
+`)
+}
+
+async function showHelp() {
+  try {
+    const totalRamGB = getSystemRamGB()
+    
+    console.log(`
+╔══════════════════════════════════════════════════════════════════╗
+║                    🤖 GAIA MODEL SELECTION GUIDE                ║
+╚══════════════════════════════════════════════════════════════════╝
+
+📊 YOUR SYSTEM: ${totalRamGB}GB RAM
+
+🎯 CHOOSE BY USE CASE:
+──────────────────────────────────────────────────────────────────
+`)
+
+    const useCases = [
+      "coding",
+      "general-chat", 
+      "creative-writing",
+      "resource-constrained",
+      "research"
+    ]
+
+    for (const useCase of useCases) {
+      console.log(getRecommendationsByUseCase(useCase, totalRamGB))
+      console.log("──────────────────────────────────────────────────────────────────")
+    }
+
+    console.log(`
+💡 QUICK SELECTION TIPS:
+• New to AI models? Start with Phi-3 Mini or Llama 3 8B
+• Need fast responses? Choose Small models (1-5B parameters)
+• Want best quality? Choose Big models (9B+) if you have 24GB+ RAM
+• Coding tasks? Codestral models are specialized for programming
+• General purpose? Llama models are versatile and well-tested
+
+⚡ PERFORMANCE vs RESOURCE TRADE-OFF:
+• Small models: Fast, efficient, good for basic tasks
+• Medium models: Balanced performance, handles most use cases well  
+• Big models: Best quality, slowest, needs more RAM
+
+🔧 COMMANDS:
+• gaia setup    - Interactive model selection and installation
+• gaia help     - Show this guide
+• gaia recommend - Get personalized model recommendations
+
+For more detailed setup, run: gaia setup
+`)
+
+  } catch (error) {
+    console.error("Error displaying help:", error)
+  }
+}
+
+async function showRecommendations() {
+  try {
+    const totalRamGB = getSystemRamGB()
+    console.log(`\n🎯 PERSONALIZED MODEL RECOMMENDATIONS`)
+    console.log(`   Based on your system: ${totalRamGB}GB RAM\n`)
+
+    const { useCase } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "useCase",
+        message: "What will you primarily use the AI model for?",
+        choices: [
+          { name: "🔧 Coding & Programming", value: "coding" },
+          { name: "💬 General Chat & Conversation", value: "general-chat" },
+          { name: "✍️  Creative Writing", value: "creative-writing" },
+          { name: "🔬 Research & Analysis", value: "research" },
+          { name: "⚡ Resource-Constrained Environment", value: "resource-constrained" },
+          { name: "📝 General Purpose", value: "general-purpose" }
+        ],
+        pageSize: 6
+      }
+    ])
+
+    console.log(getRecommendationsByUseCase(useCase, totalRamGB))
+
+    const { showModels } = await inquirer.prompt([
+      {
+        type: "confirm",
+        name: "showModels",
+        message: "Would you like to see available models and start setup?",
+        default: true
+      }
+    ])
+
+    if (showModels) {
+      console.log("\n🚀 Starting setup process...\n")
+      await setup()
+    }
+
+  } catch (error) {
+    console.error("Error showing recommendations:", error)
+  }
+}
 
 async function setup() {
   try {
@@ -273,6 +490,9 @@ async function setup() {
 
     console.log(`\n🎉 Setup complete for ${selectedModel.name}!`)
     console.log("Your GaiaNet node should now be running.")
+    
+    console.log("\n" + "=".repeat(80))
+    showWelcomeBanner()
   } catch (error) {
     console.error(`\n🛑 An unexpected error occurred during setup:`)
     if (error instanceof Error) {
@@ -290,4 +510,24 @@ program
 .description("Interactively select a model category and then a model to install.")
 .action(setup)
 
-program.parse(process.argv)
+program
+.command("help")
+.description("Show comprehensive model selection guide and recommendations.")
+.action(showHelp)
+
+program
+.command("recommend")
+.description("Get personalized model recommendations based on your use case.")
+.action(showRecommendations)
+
+program
+.command("welcome")
+.description("Show the welcome banner with available commands.")
+.action(showWelcomeBanner)
+
+// Show welcome banner if no command is provided
+if (process.argv.length === 2) {
+  showWelcomeBanner()
+} else {
+  program.parse(process.argv)
+}
