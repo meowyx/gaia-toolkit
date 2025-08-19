@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 
 import { Command } from "commander"
-import { spawn, type SpawnOptions } from "child_process"
+import { spawn, exec, type SpawnOptions } from "child_process"
 import inquirer from "inquirer"
 import os from "os"
+import chalk from "chalk"
+import ora from "ora"
+import gradient from "gradient-string"
+import { promisify } from "util"
+import readline from "readline"
 
 interface Model {
 name: string
@@ -21,6 +26,26 @@ HEAVY = "Heavy (17B - 24B parameters) - 32GB RAM",
 BIG = "Big (25B - 70B parameters) - 64GB RAM",
 MAX = "Max (70B+ parameters) - 128GB+ RAM",
 UNKNOWN = "Unknown Size",
+}
+
+interface KnowledgeBase {
+  name: string
+  snapshot: string
+  systemPrompt: string
+}
+
+interface Message {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
+interface ChatOptions {
+  apiUrl?: string
+  model?: string
+  systemPrompt?: string
+  system?: string
+  apiKey?: string
+  endpoint?: string
 }
 
 function getSystemRamGB(): number {
@@ -177,7 +202,12 @@ return recommendations[useCase] || `
 }
 
 async function fetchModelsFromGitHub(): Promise<Model[]> {
-console.log("⏳ Fetching latest models from GitHub...")
+const spinner = ora({
+  text: 'Fetching latest models from GitHub...',
+  spinner: 'dots12',
+  color: 'cyan'
+}).start()
+
 const apiUrl = "https://api.github.com/repos/GaiaNet-AI/node-configs/contents/"
 try {
   const response = await fetch(apiUrl, {
@@ -214,10 +244,10 @@ try {
     throw new Error("No models found in the GitHub repository.")
   }
 
-  console.log("✅ Successfully fetched model list.")
+  spinner.succeed('Successfully fetched model list.')
   return fetchedModels
 } catch (error) {
-  console.error("\n❌ Error fetching models from GitHub.")
+  spinner.fail('Error fetching models from GitHub.')
   if (error instanceof Error) console.error(`Details: ${error.message}`)
   console.error("Falling back to a minimal hardcoded list...")
   return [
@@ -249,7 +279,7 @@ try {
 function runCommand(command: string, args: string[] = [], options: SpawnOptions = {}): Promise<void> {
 return new Promise((resolve, reject) => {
   const commandString = args.length > 0 ? `${command} ${args.join(" ")}` : command
-  console.log(`\n⏳ Executing: ${commandString}`)
+  console.log(chalk.gray(`\n⏳ Executing: ${commandString}`))
   const isShellCommand = command.includes("|") || command.includes(">")
   const proc = spawn(isShellCommand ? command : command, isShellCommand ? [] : args, {
     stdio: "inherit",
@@ -258,17 +288,17 @@ return new Promise((resolve, reject) => {
   })
   proc.on("close", (code) => {
     if (code === 0) {
-      console.log(`✅ Command finished successfully: ${commandString}`)
+      console.log(chalk.green(`✅ Command finished successfully: ${commandString}`))
       resolve()
     } else {
       const errorMsg = `Command failed with code ${code}: ${commandString}`
-      console.error(`❌ ${errorMsg}`)
+      console.error(chalk.red(`❌ ${errorMsg}`))
       reject(new Error(errorMsg))
     }
   })
   proc.on("error", (err) => {
     const errorMsg = `Failed to start command: ${commandString}`
-    console.error(`❌ ${errorMsg}`)
+    console.error(chalk.red(`❌ ${errorMsg}`))
     reject(new Error(`${errorMsg}\n${err.message}`))
   })
 })
@@ -276,12 +306,32 @@ return new Promise((resolve, reject) => {
 
 const program = new Command()
 
+async function promptToReturnToMenu() {
+  const { returnToMenu } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'returnToMenu',
+      message: '\nWould you like to return to the main menu?',
+      default: true
+    }
+  ])
+  
+  if (returnToMenu) {
+    await mainMenu()
+  } else {
+    console.log(chalk.yellow('\nGoodbye! 👋'))
+    process.exit(0)
+  }
+}
+
 program
 .name("gaia")
 .description("CLI to install, initialize, and start GaiaNet nodes for various AI models.")
 .version("0.1.0")
 
-function showWelcomeBanner() {
+async function showWelcomeBanner() {
+  console.clear()
+  
   console.log(`
 ╔════════════════════════════════════════════════════════════════════════════════════════════╗
 ║   ██████╗  █████╗ ██╗ █████╗     ████████╗ ██████╗  ██████╗ ██╗     ██╗  ██╗██╗████████╗   ║
@@ -293,21 +343,24 @@ function showWelcomeBanner() {
 ║                                                                                            ║
 ║                            🤖 Your Own AI, Your Own Data                                   ║
 ╚════════════════════════════════════════════════════════════════════════════════════════════╝
-
-🚀 AVAILABLE COMMANDS:
-──────────────────────────────────────────────────────────────────────────────
-  gaia list       🔍 Browse available models with filtering options
-  gaia info       📊 Get detailed information about a specific model
-  gaia run        ⚡ Quick model deployment (install and run)
-  gaia setup      📦 Interactive model selection and installation
-  gaia help       📚 Show comprehensive model selection guide  
-  gaia recommend  🎯 Get personalized model recommendations
-
-💡 QUICK START:
-  Run 'gaia list' to see available models or 'gaia setup' for guided installation!
-
-🔧 Need help choosing a model? Run 'gaia recommend' for personalized suggestions.
 `)
+  
+  console.log(chalk.gray('\n─────────────────────────────────────────\n'))
+
+  console.log(chalk.yellow.bold('🚀 AVAILABLE COMMANDS:'))
+  console.log(chalk.gray('──────────────────────────────────────────────────────────────────────────────'))
+  console.log(chalk.cyan('  gaia list       ') + chalk.gray('🔍 Browse available models with filtering options'))
+  console.log(chalk.cyan('  gaia info       ') + chalk.gray('📊 Get detailed information about a specific model'))
+  console.log(chalk.cyan('  gaia run        ') + chalk.gray('⚡ Quick model deployment (install and run)'))
+  console.log(chalk.cyan('  gaia setup      ') + chalk.gray('📦 Interactive model selection and installation'))
+  console.log(chalk.cyan('  gaia help       ') + chalk.gray('📚 Show comprehensive model selection guide'))
+  console.log(chalk.cyan('  gaia recommend  ') + chalk.gray('🎯 Get personalized model recommendations'))
+  console.log(chalk.cyan('  gaia chat       ') + chalk.gray('💬 Chat with a Gaia AI node'))
+  console.log(chalk.cyan('  gaia kb         ') + chalk.gray('📚 Configure knowledge bases'))
+
+  console.log(chalk.gray('\n💡 QUICK START:'))
+  console.log(chalk.gray("  Run 'gaia list' to see available models or 'gaia setup' for guided installation!"))
+  console.log(chalk.gray("\n🔧 Need help choosing a model? Run 'gaia recommend' for personalized suggestions."))
 }
 
 async function showHelp() {
@@ -528,9 +581,6 @@ async function setup() {
 
     console.log(`\n🎉 Setup complete for ${selectedModel.name}!`)
     console.log("Your GaiaNet node should now be running.")
-    
-    console.log("\n" + "=".repeat(80))
-    showWelcomeBanner()
   } catch (error) {
     console.error(`\n🛑 An unexpected error occurred during setup:`)
     if (error instanceof Error) {
@@ -546,22 +596,36 @@ async function setup() {
 program
 .command("setup")
 .description("Interactively select a model category and then a model to install.")
-.action(setup)
+.action(async () => {
+  await setup()
+  await promptToReturnToMenu()
+})
 
 program
 .command("help")
 .description("Show comprehensive model selection guide and recommendations.")
-.action(showHelp)
+.action(async () => {
+  await showHelp()
+  await promptToReturnToMenu()
+})
 
 program
 .command("recommend")
 .description("Get personalized model recommendations based on your use case.")
-.action(showRecommendations)
+.action(async () => {
+  await showRecommendations()
+  if (!process.exitCode) {
+    await promptToReturnToMenu()
+  }
+})
 
 program
 .command("welcome")
 .description("Show the welcome banner with available commands.")
-.action(showWelcomeBanner)
+.action(async () => {
+  await showWelcomeBanner()
+  await promptToReturnToMenu()
+})
 
 async function listModels(options: { size?: string; useCase?: string; format?: string }) {
   try {
@@ -700,12 +764,18 @@ program
   .option("-s, --size <size>", "Filter by size category (small, standard, medium, heavy, big, max)")
   .option("-u, --use-case <useCase>", "Filter by use case (coding, chat, creative, etc.)")
   .option("-f, --format <format>", "Output format (table or json)", "table")
-  .action(listModels)
+  .action(async (options) => {
+    await listModels(options)
+    await promptToReturnToMenu()
+  })
 
 program
   .command("info <model>")
   .description("Show detailed information about a specific model")
-  .action(showModelInfo)
+  .action(async (modelId) => {
+    await showModelInfo(modelId)
+    await promptToReturnToMenu()
+  })
 
 async function runModel(modelId: string, options: { skipInstall?: boolean; force?: boolean }) {
   try {
@@ -902,11 +972,598 @@ program
   .description("Install and run a specific model by its ID")
   .option("--skip-install", "Skip GaiaNet installation if already installed")
   .option("--force", "Force installation even if system requirements are not met (DANGEROUS)")
-  .action(runModel)
+  .action(async (modelId, options) => {
+    await runModel(modelId, options)
+    await promptToReturnToMenu()
+  })
+
+const prebuiltKnowledgeBases: KnowledgeBase[] = [
+  {
+    name: 'London Tour Guide',
+    snapshot: 'https://huggingface.co/datasets/gaianet/london/resolve/main/london_768_nomic-embed-text-v1.5-f16.snapshot.tar.gz',
+    systemPrompt: 'You are a tour guide in London, UK. Please answer the question from a London visitor accurately.'
+  },
+  {
+    name: 'Vyper Language Expert',
+    snapshot: 'https://huggingface.co/datasets/meowy-ai/vyper-lang/resolve/main/default-845259036638694-2025-04-22-09-28-18.snapshot.tar.gz',
+    systemPrompt: 'You are a vyper lang expert, please answer questions'
+  },
+  {
+    name: 'MCP Expert',
+    snapshot: 'https://huggingface.co/datasets/tobySolutions/mcp-agent/resolve/main/mcp-expert.snapshot.tar.gz',
+    systemPrompt: 'You are a mcp expert, please answer questions'
+  },
+  {
+    name: 'Solidity Expert',
+    snapshot: 'https://huggingface.co/datasets/harishkotra/solidity/resolve/main/solidity_snippets-7989848718163905-2025-03-27-14-08-36.snapshot',
+    systemPrompt: 'You are a solidity expert, please answer questions'
+  }
+]
+
+class GaiaCLI {
+  private messages: Message[] = []
+  private options: ChatOptions
+  private rl: readline.Interface
+  private shouldExit: boolean = false
+  private switchTo: 'menu' | 'knowledge-base' | null = null
+
+  constructor(options: ChatOptions) {
+    this.options = options
+    this.rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt: chalk.blue('You: ')
+    })
+
+    if (options.system) {
+      this.messages.push({
+        role: 'system',
+        content: options.system
+      })
+    }
+  }
+
+  private async sendMessage(content: string): Promise<string> {
+    const spinner = ora('Thinking...').start()
+    
+    try {
+      this.messages.push({
+        role: 'user',
+        content
+      })
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+
+      if (this.options.apiKey) {
+        headers['Authorization'] = `Bearer ${this.options.apiKey}`
+      }
+
+      const url = `${this.options.endpoint}/v1/chat/completions`
+      const body = JSON.stringify({
+        model: this.options.model || 'llama',
+        messages: this.messages,
+        stream: false
+      })
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body
+      })
+
+      spinner.stop()
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(chalk.gray(`URL: ${url}`))
+        console.error(chalk.gray(`Status: ${response.status}`))
+        if (errorText) {
+          console.error(chalk.gray(`Response: ${errorText}`))
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json() as any
+      const assistantMessage = data.choices?.[0]?.message?.content
+
+      if (!assistantMessage) {
+        throw new Error('No response content received')
+      }
+
+      this.messages.push({
+        role: 'assistant',
+        content: assistantMessage
+      })
+
+      return assistantMessage
+    } catch (error) {
+      spinner.stop()
+      throw error
+    }
+  }
+
+  private formatResponse(text: string): string {
+    return text.split('\n').map(line => {
+      if (line.trim().startsWith('```')) {
+        return chalk.gray(line)
+      }
+      if (line.trim().startsWith('#')) {
+        return chalk.bold.yellow(line)
+      }
+      return line
+    }).join('\n')
+  }
+
+  public async start(): Promise<'menu' | 'knowledge-base' | null> {
+    console.log(chalk.green.bold('\n🤖 Gaia Chat Session'))
+    console.log(chalk.gray(`Connected to: ${this.options.endpoint}`))
+    console.log(chalk.gray(`Model: ${this.options.model || 'llama'}`))
+    console.log(chalk.gray('Commands: /help, /menu, /kb (knowledge-base), /exit\n'))
+
+    this.rl.prompt()
+
+    return new Promise((resolve) => {
+      this.rl.on('line', async (input: string) => {
+        const trimmed = input.trim()
+        
+        // Handle commands
+        if (trimmed.startsWith('/')) {
+          const command = trimmed.toLowerCase()
+          
+          switch (command) {
+            case '/help':
+              console.log(chalk.cyan('\nAvailable commands:'))
+              console.log(chalk.gray('  /help    - Show this help message'))
+              console.log(chalk.gray('  /menu    - Return to main menu'))
+              console.log(chalk.gray('  /kb      - Switch to knowledge base configuration'))
+              console.log(chalk.gray('  /exit    - Exit the application'))
+              console.log(chalk.gray('  exit     - Exit the application\n'))
+              this.rl.prompt()
+              return
+              
+            case '/menu':
+              this.switchTo = 'menu'
+              this.rl.close()
+              return
+              
+            case '/kb':
+            case '/knowledge-base':
+              this.switchTo = 'knowledge-base'
+              this.rl.close()
+              return
+              
+            case '/exit':
+              this.shouldExit = true
+              this.rl.close()
+              return
+              
+            default:
+              console.log(chalk.yellow(`Unknown command: ${command}. Type /help for available commands.\n`))
+              this.rl.prompt()
+              return
+          }
+        }
+        
+        if (trimmed === '' || trimmed === 'exit' || trimmed === 'quit') {
+          this.shouldExit = true
+          this.rl.close()
+          return
+        }
+
+        try {
+          const response = await this.sendMessage(trimmed)
+          console.log(chalk.green('Assistant: ') + this.formatResponse(response))
+          console.log()
+        } catch (error) {
+          console.error(chalk.red('Error: ') + (error as Error).message)
+        }
+
+        this.rl.prompt()
+      })
+
+      this.rl.on('close', () => {
+        if (this.shouldExit) {
+          console.log(chalk.yellow('\nGoodbye! 👋'))
+          process.exit(0)
+        }
+        resolve(this.switchTo)
+      })
+
+      process.on('SIGINT', () => {
+        console.log(chalk.yellow('\nGoodbye! 👋'))
+        process.exit(0)
+      })
+    })
+  }
+}
+
+async function checkGaiaNodeStatus(): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
+    const response = await fetch('http://localhost:8080/v1/models', {
+      method: 'GET',
+      signal: controller.signal
+    })
+    
+    clearTimeout(timeoutId)
+    return response.ok
+  } catch (error) {
+    return false
+  }
+}
+
+async function promptForChatConfig(): Promise<ChatOptions> {
+  const { connectionType } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'connectionType',
+      message: 'How would you like to connect?',
+      choices: [
+        { name: 'Local Gaia node (no API key required)', value: 'local' },
+        { name: 'Public hosted Gaia domain (API key required)', value: 'public' }
+      ]
+    }
+  ])
+
+  let endpoint: string
+  let apiKey: string | undefined
+
+  if (connectionType === 'local') {
+    const localAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'endpoint',
+        message: 'Enter your local Gaia endpoint:',
+        default: 'http://localhost:8080',
+        validate: (input: string) => {
+          try {
+            new URL(input)
+            return true
+          } catch {
+            return 'Please enter a valid URL'
+          }
+        }
+      }
+    ])
+    endpoint = localAnswers.endpoint
+  } else {
+    const publicAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'nodeId',
+        message: 'Enter the Gaia node ID (e.g., 0x1234abcd or metamask):',
+        validate: (input: string) => {
+          if (!input || input.trim().length === 0) {
+            return 'Node ID is required'
+          }
+          if (input.includes('http://') || input.includes('https://') || input.includes('.gaia.domains')) {
+            return 'Please enter only the node ID, not the full URL (e.g., "metamask" not "https://metamask.gaia.domains")'
+          }
+          return true
+        },
+        filter: (input: string) => {
+          return input.trim()
+            .replace(/^https?:\/\//, '')
+            .replace(/\.gaia\.domains\/?.*$/, '')
+        }
+      },
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'Enter your API key:',
+        mask: '*',
+        validate: (input: string) => {
+          if (!input || input.trim().length === 0) {
+            return 'API key is required for public domains'
+          }
+          return true
+        }
+      }
+    ])
+    endpoint = `https://${publicAnswers.nodeId}.gaia.domains`
+    apiKey = publicAnswers.apiKey
+  }
+
+  const commonAnswers = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'model',
+      message: 'Enter the model name:',
+      default: 'llama'
+    },
+    {
+      type: 'input',
+      name: 'system',
+      message: 'Enter system message (optional):',
+      default: 'You are a helpful assistant'
+    }
+  ])
+
+  return {
+    endpoint,
+    apiKey,
+    model: commonAnswers.model,
+    system: commonAnswers.system || 'You are a helpful assistant'
+  }
+}
+
+async function promptForKnowledgeBase(): Promise<'menu' | 'chat' | null> {
+  const { kbType } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'kbType',
+      message: 'Choose a knowledge base option:',
+      choices: [
+        ...prebuiltKnowledgeBases.map(kb => ({ name: kb.name, value: kb })),
+        new inquirer.Separator(),
+        { name: 'Custom knowledge base', value: 'custom' },
+        new inquirer.Separator(),
+        { name: '← Back to main menu', value: 'back' }
+      ]
+    }
+  ])
+
+  if (kbType === 'back') {
+    return 'menu'
+  }
+
+  let snapshot: string
+  let systemPrompt: string
+
+  if (kbType === 'custom') {
+    const customAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'snapshot',
+        message: 'Enter the snapshot URL:',
+        validate: (input: string) => {
+          if (!input || input.trim().length === 0) {
+            return 'Snapshot URL is required'
+          }
+          try {
+            new URL(input)
+            return true
+          } catch {
+            return 'Please enter a valid URL'
+          }
+        }
+      },
+      {
+        type: 'input',
+        name: 'systemPrompt',
+        message: 'Enter the system prompt:',
+        validate: (input: string) => {
+          if (!input || input.trim().length === 0) {
+            return 'System prompt is required'
+          }
+          return true
+        }
+      }
+    ])
+    snapshot = customAnswers.snapshot
+    systemPrompt = customAnswers.systemPrompt
+  } else {
+    snapshot = kbType.snapshot
+    systemPrompt = kbType.systemPrompt
+  }
+
+  const nodeSpinner = ora({
+    text: 'Checking Gaia node status...',
+    spinner: 'dots12',
+    color: 'cyan'
+  }).start()
+
+  const isNodeRunning = await checkGaiaNodeStatus()
+  
+  if (!isNodeRunning) {
+    nodeSpinner.fail('Gaia node is not running')
+    console.log(chalk.yellow('\n⚠️  Please make sure your Gaia node is running.'))
+    console.log(chalk.gray('Start with: gaianet start'))
+    
+    const { proceed } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'proceed',
+        message: 'Do you want to configure anyway?',
+        default: true
+      }
+    ])
+    
+    if (!proceed) {
+      return 'menu'
+    }
+  } else {
+    nodeSpinner.succeed('Gaia node is running')
+  }
+
+  const command = `gaianet config --snapshot "${snapshot}" --system-prompt "${systemPrompt}"`
+
+  console.log('\n' + chalk.green.bold('Configuring Gaia node with knowledge base...'))
+  console.log(chalk.gray('─────────────────────────────────────────\n'))
+
+  console.log(chalk.gray('Executing command:'))
+  console.log(chalk.cyan(command))
+  console.log()
+
+  const configSpinner = ora({
+    text: 'Applying configuration...',
+    spinner: 'dots12',
+    color: 'cyan'
+  }).start()
+
+  const { success, output } = await executeGaiaCommand(command)
+
+  if (success) {
+    configSpinner.succeed('Configuration applied successfully!')
+    console.log(chalk.green('\n✅ Knowledge base configured successfully!'))
+    if (output) {
+      console.log(chalk.gray('\nOutput:'))
+      console.log(chalk.gray(output))
+    }
+    
+    console.log(chalk.yellow('\n📝 To apply the changes, please restart your Gaia node:'))
+    console.log(chalk.gray('   1. Stop the node: ') + chalk.cyan('gaianet stop'))
+    console.log(chalk.gray('   2. Start the node: ') + chalk.cyan('gaianet start'))
+  } else {
+    configSpinner.fail('Configuration failed')
+    console.log(chalk.red('\n❌ Failed to configure knowledge base'))
+    console.log(chalk.gray('Error: ' + output))
+    console.log(chalk.yellow('\nYou can try running this command manually:'))
+    console.log(chalk.cyan(command))
+  }
+
+  const { nextAction } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'nextAction',
+      message: 'What would you like to do next?',
+      choices: [
+        { name: '💬 Go to Gaia Chat', value: 'chat' },
+        { name: '📚 Configure another knowledge base', value: 'kb' },
+        { name: '← Return to main menu', value: 'menu' },
+        { name: '🚪 Exit', value: 'exit' }
+      ]
+    }
+  ])
+
+  if (nextAction === 'exit') {
+    console.log(chalk.yellow('\nGoodbye! 👋'))
+    process.exit(0)
+  } else if (nextAction === 'kb') {
+    return promptForKnowledgeBase()
+  }
+
+  return nextAction
+}
+
+async function executeGaiaCommand(command: string): Promise<{ success: boolean; output: string }> {
+  try {
+    const { exec } = await import('child_process')
+    const { stdout, stderr } = await promisify(exec)(command)
+    return { success: true, output: stdout || stderr }
+  } catch (error: any) {
+    return { success: false, output: error.message }
+  }
+}
+
+async function chat() {
+  const chatOptions = await promptForChatConfig()
+  
+  const loadingSpinner = ora({
+    text: 'Connecting to Gaia...',
+    spinner: 'dots12',
+    color: 'cyan'
+  }).start()
+
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  loadingSpinner.succeed('Connected successfully!')
+
+  const gaiaCli = new GaiaCLI(chatOptions)
+  const switchTo = await gaiaCli.start()
+  
+  if (switchTo === 'knowledge-base') {
+    const kbResult = await promptForKnowledgeBase()
+    if (kbResult === 'chat') {
+      const newChat = new GaiaCLI(chatOptions)
+      await newChat.start()
+    } else if (kbResult === 'menu') {
+      return mainMenu()
+    }
+  } else if (switchTo === 'menu') {
+    return mainMenu()
+  }
+}
+
+async function knowledgeBase() {
+  const kbResult = await promptForKnowledgeBase()
+  if (kbResult === 'chat') {
+    return chat()
+  } else if (kbResult === 'menu') {
+    return mainMenu()
+  }
+}
+
+async function mainMenu() {
+  await showWelcomeBanner()
+
+  const { mode } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'mode',
+      message: 'What would you like to do?',
+      choices: [
+        { name: '💬 Gaia Chat - Chat with a Gaia AI node', value: 'chat' },
+        { name: '📚 Gaia Knowledge Base - Configure a knowledge base', value: 'knowledge-base' },
+        { name: '📦 Setup Model - Interactive model selection', value: 'setup' },
+        { name: '🔍 List Models - Browse available models', value: 'list' },
+        { name: '🎯 Get Recommendations - Personalized suggestions', value: 'recommend' },
+        new inquirer.Separator(),
+        { name: '🚪 Exit', value: 'exit' }
+      ]
+    }
+  ])
+
+  switch (mode) {
+    case 'chat':
+      await chat()
+      break
+    case 'knowledge-base':
+      await knowledgeBase()
+      break
+    case 'setup':
+      await setup()
+      break
+    case 'list':
+      await listModels({})
+      const { nextAction } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'nextAction',
+          message: 'Return to main menu?',
+          default: true
+        }
+      ])
+      if (nextAction) await mainMenu()
+      break
+    case 'recommend':
+      await showRecommendations()
+      break
+    case 'exit':
+      console.log(chalk.yellow('\nGoodbye! 👋'))
+      process.exit(0)
+  }
+}
+
+program
+  .command('chat')
+  .description('Start a chat session with a Gaia AI node')
+  .action(async () => {
+    await chat()
+    if (!process.exitCode) {
+      await promptToReturnToMenu()
+    }
+  })
+
+program
+  .command('kb')
+  .alias('knowledge-base')
+  .description('Configure knowledge bases for your Gaia node')
+  .action(async () => {
+    await knowledgeBase()
+    if (!process.exitCode) {
+      await promptToReturnToMenu()
+    }
+  })
 
 // Show welcome banner if no command is provided
 if (process.argv.length === 2) {
-  showWelcomeBanner()
+  showWelcomeBanner().then(async () => {
+    await mainMenu()
+  })
 } else {
   program.parse(process.argv)
 }
