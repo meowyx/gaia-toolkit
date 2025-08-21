@@ -2,6 +2,21 @@
 
 A comprehensive command-line interface (CLI) tool for managing and running various AI models through GaiaNet nodes. The toolkit provides intelligent model selection, system-aware recommendations, and seamless setup for your own AI infrastructure.
 
+## 📦 Installation
+
+Install the Gaia Toolkit globally via npm:
+
+```bash
+npm install -g gaia-toolkit
+```
+
+Once installed, you can use the `gaia` command from anywhere in your terminal.
+
+**Prerequisites:**
+- Node.js 16+ 
+- 8GB+ RAM (see [System Requirements](#-system-requirements) for model-specific needs)
+- Internet connection for initial setup
+
 ## 🎉 Key Improvements
 
 - **🔍 Better Model Discovery**: Browse and filter models with `gaia list --size small --use-case coding`
@@ -36,6 +51,26 @@ gaia help
 ```
 
 ## ✨ Features
+
+### 💬 Gaia Chat
+- **Interactive Chat Sessions**: Start conversations with your local Gaia node or any public Gaia domain
+- **Connection Options**: 
+  - Local node support (no API key required)
+  - Public hosted Gaia domain support (API key required)
+- **Built-in Commands**: Use `/help`, `/menu`, `/kb`, or `/exit` during chat sessions
+- **Seamless Navigation**: Switch between chat, knowledge base configuration, and main menu
+
+### 📚 Gaia Knowledge Base
+- **Pre-built Knowledge Bases**:
+  1. **London Tour Guide** - Expert on London tourism
+  2. **Vyper Language Expert** - Programming language expertise
+  3. **MCP Expert** - Model Context Protocol knowledge
+  4. **Solidity Expert** - Smart contract development
+- **Custom Knowledge Bases**: Configure your own by providing:
+  - Snapshot URL
+  - System prompt
+- **Easy Configuration**: One-command setup with automatic node configuration
+- **Integrated Workflow**: Configure knowledge bases directly from chat sessions
 
 ### 🎯 Smart Model Management
 - **Dynamic Model Discovery**: Automatically fetches available models from the GaiaNet repository
@@ -134,6 +169,27 @@ Comprehensive model selection guide including:
 - Performance vs resource trade-offs
 - Use case-specific recommendations
 - Quick selection tips for beginners
+
+### `gaia chat`
+Start a chat session with a Gaia AI node:
+- **Connection Types**: Choose between local node or public hosted domains
+- **Local Node**: Connect to your running Gaia node at localhost (no API key required)
+- **Public Domains**: Connect to public Gaia nodes with API key authentication
+- **Customizable**: Set custom model names and system prompts
+- **Interactive Commands**: Use `/help`, `/menu`, `/kb`, or `/exit` during chat
+- **Example**: `gaia chat`
+
+### `gaia kb` or `gaia knowledge-base`
+Configure knowledge bases for your local Gaia node:
+- **Pre-built Options**: 
+  - London Tour Guide - Tourism expertise
+  - Vyper Language Expert - Programming language knowledge
+  - MCP Expert - Model Context Protocol expertise
+  - Solidity Expert - Smart contract development
+- **Custom Configuration**: Provide your own snapshot URL and system prompt
+- **Automatic Setup**: Configures your node with the selected knowledge base
+- **Restart Required**: Node must be restarted to apply changes
+- **Example**: `gaia kb`
 
 ### `gaia welcome`
 Displays the welcome banner with command overview.
